@@ -1,0 +1,125 @@
+---
+title: "STAT202 Lab 2: Multiple Linear Regression START"
+author: "David Ewing"
+date: "Due on 7 August 2024"
+output: 
+  word_document:
+---
+
+# Introduction
+This document contains the analysis for Lab 2. It explores biometric data using multiple linear regression to understand the relationships between various predictors and the response variable weight_kg. The analysis will follow these steps:"
+  
+\newpage 
+
+# Step 0: setup
+loading  libraries:
+
+```{r setup, include=TRUE}
+
+set.seed(82171165)   #set seed 
+
+knitr::opts_chunk$set(
+  echo    = TRUE, # Show all code by default
+  message = TRUE, # Include package messages
+  warning = TRUE  # Include warnings if they occur
+)
+
+
+
+library(conflicted)
+library(tidyverse)
+library(readxl)
+library(performance)
+library(GGally)
+library(flextable)
+library(skimr)
+library(data.table)
+conflict_prefer("filter", "dplyr"); conflict_prefer("select", "dplyr")
+
+```
+
+\newpage 
+
+# Step 1: Read biometrics.xlsx
+
+
+```{r step1, echo=TRUE, message=TRUE}
+biomet <- read_excel("../data/biometrics.xlsx")
+skim_summary <- skim(biomet)
+skim_summary |>
+  select(skim_variable, n_missing)
+
+``` 
+
+\newpage
+
+# Step 2: Scatterplot of Weight vs Height
+
+```{r step2, echo=TRUE, message=TRUE}
+
+
+
+
+
+
+befor <- biomet |>
+  ggplot(aes(x = height_cm, y = weight_kg)) +  # Scatterplot
+  geom_point() +
+  labs(
+    title = "Scatterplot of Weight vs Height \noriginal",
+    x = "Height (cm)",
+    y = "Weight (kg)"
+  ) +
+  theme_bw()
+
+```
+
+
+```{r step3, echo=TRUE, message=TRUE}
+
+biomet_0 <- biomet |>
+  drop_na( finger2_cm, finger4_cm) # drop missing values identified in skim() 
+
+remove_outliers <- function(data, column) {        # Function to remove outliers 
+  outliers <- boxplot.stats(data[[column]])$out    # identify outliers
+  data |> filter(!(data[[column]] %in% outliers))  # filter   outliers
+}
+
+library(patchwork)
+
+biomet_my <- biomet |>
+  drop_na( finger2_cm, finger4_cm) |>  # drop missing values identified in skim() 
+  remove_outliers("height_cm") |>      # remove outliers 
+  remove_outliers("weight_kg") |>      # remove outliers 
+  slice_sample(n = 150)                # take a random sample
+  
+after <-  biomet_my |>
+  ggplot(aes(x = height_cm, y = weight_kg)) +  # Scatterplot
+  geom_point() +
+  labs(
+    title = "Scatterplot of Weight vs Height \noutliers/NA removed",
+    x = "Height (cm)",
+    y = "Weight (kg)"
+  ) +
+  theme_bw()
+  
+  befor + after 
+  
+  
+```
+```{r step4, echo=TRUE, message=FALSE, fig.width=10, fig.height=10}
+# Scatterplot matrix for selected variables
+biomet_my |>
+  select(height_cm, handspan_cm, finger2_cm, weight_kg) |>
+  ggpairs(title = "Scatterplot Matrix of Biometric Variables") +
+  theme_bw()
+
+biomet_my |>
+  select(height_cm, handspan_cm, finger2_cm, weight_kg) |>
+  ggpairs(
+    lower = list(continuous = wrap("smooth", method = "lm", se = TRUE)),
+    title = "Scatterplot Matrix of Biometric Variables\nwith Regression Lines"
+  ) +
+  theme_bw()
+
+```
