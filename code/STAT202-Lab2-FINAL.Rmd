@@ -1,0 +1,471 @@
+---
+title: "STAT202 Lab 2: Multiple Linear Regression START"
+author: "David Ewing"
+date: "Due on 7 August 2024"
+output: 
+  word_document:
+    reference_docx: "template.docx"
+---
+
+# Introduction
+This document contains the analysis for Lab 2. It explores biometric data using multiple linear regression to understand the relationships between various predictors and the response variable weight_kg. The analysis will follow these steps:"
+  
+\newpage 
+
+# Step 0: setup
+loading  libraries:
+
+```{r setup, include=TRUE}
+
+set.seed(82171165)   #set seed 
+
+knitr::opts_chunk$set(
+  echo    = TRUE, # Show all code by default
+  message = TRUE, # Include package messages
+  warning = TRUE  # Include warnings if they occur
+)
+
+
+
+library(conflicted)
+library(tidyverse)
+library(readxl)
+library(readr) 
+library(performance)
+library(GGally)
+library(flextable)
+library(broom)
+library(skimr)
+library(data.table)
+library(lmtest)  
+conflict_prefer("filter", "dplyr"); conflict_prefer("select", "dplyr")
+
+```
+
+\newpage 
+
+# Step 1: Read biometrics.xlsx
+
+```{r step1, echo=TRUE, message=TRUE}
+# Load the data
+biomet <- read_excel("../data/biometrics.xlsx")
+
+# Summarise missing values using skimr
+skim_biomet <- skim(biomet) |>
+  select(skim_variable, n_missing)
+
+skim_biomet 
+
+
+``` 
+
+\newpage
+
+# Step 2: Scatterplot of Weight vs Height
+
+```{r step2, echo=TRUE, message=TRUE}
+
+
+
+
+
+
+befor <- biomet |>
+  ggplot(aes(x = height_cm, y = weight_kg)) +  # Scatterplot
+  geom_point() +
+  labs(
+    title = "Scatterplot of Weight vs Height \noriginal",
+    x = "Height (cm)",
+    y = "Weight (kg)"
+  ) +
+  theme_bw()
+befor
+
+```
+
+\newpage
+
+# Step 3: Drop missing and filter outliers
+
+
+```{r step3, echo=TRUE, message=TRUE, fig.width=10, fig.height=5}
+
+biomet_0 <- biomet |>
+  drop_na( finger2_cm, finger4_cm) # drop missing values identified in skim() 
+
+remove_outliers <- function(data, column) {        # Function to remove outliers 
+  outliers <- boxplot.stats(data[[column]])$out    # identify outliers
+  data |> filter(!(data[[column]] %in% outliers))  # filter   outliers
+}
+
+library(patchwork)
+
+biomet_my <- biomet |>
+  drop_na( finger2_cm, finger4_cm) |>  # drop missing values identified in skim() 
+  remove_outliers("height_cm") |>      # remove outliers 
+  remove_outliers("weight_kg") |>      # remove outliers 
+  slice_sample(n = 150)                # take a random sample
+  
+after <-  biomet_my |>
+  ggplot(aes(x = height_cm, y = weight_kg)) +  # Scatterplot
+  geom_point() +
+  labs(
+    title = "Scatterplot of Weight vs Height \noutliers/NA removed",
+    x = "Height (cm)",
+    y = "Weight (kg)"
+  ) +
+  theme_bw()
+  
+  befor + after 
+  
+  
+```
+
+
+
+# Step 4: Scatterplot matrix
+
+
+```{r step4, echo=TRUE, message=FALSE, fig.width=10, fig.height=10}
+# Scatterplot matrix for selected variables
+biomet_my |>
+  select(height_cm, handspan_cm, finger2_cm, weight_kg) |>
+  ggpairs(title = "Scatterplot Matrix of Biometric Variables") +
+  theme_bw()
+```
+
+\newpage
+
+```{r , fig.width=10, echo=FALSE, fig.height=8}
+biomet_my |>
+  select(height_cm, handspan_cm, finger2_cm, weight_kg) |>
+  ggpairs(
+    lower = list(continuous = wrap("smooth", method = "lm", se = TRUE)),
+    title = "Scatterplot Matrix of Biometric Variables\nwith Confidence Interval"
+  ) +
+  theme_bw()
+```
+
+---
+
+Comment:
+
+The scatterplot matrix shows positive relationships between  variables. Height and weight show the strongest correlation (0.691) with a narrow confidence interval. Handspan and finger2 have moderate correlations with weight (0.445 and 0.224, respectively). Handspan and finger2 are also moderately correlated (0.613), indicating some relationship.
+
+---
+
+# Step 5: Fit Multiple Linear Regression Models
+
+```{r step5, echo=TRUE, message=TRUE}
+# Fit the models
+m1 <- lm(weight_kg ~ height_cm, data = biomet_my)
+m2 <- lm(weight_kg ~ handspan_cm, data = biomet_my)
+m3 <- lm(weight_kg ~ finger2_cm, data = biomet_my)
+m4 <- lm(weight_kg ~ height_cm + handspan_cm, data = biomet_my)
+m5 <- lm(weight_kg ~ height_cm + handspan_cm + finger2_cm, data = biomet_my)
+
+# Summarise the model performance
+library(broom)
+models_summary <- list(m1, m2, m3, m4, m5) |>
+  purrr::map_dfr(glance, .id = "model") |>
+  select(model, r.squared, adj.r.squared, sigma)
+
+# Mutate to include rounded values and an observation column
+models_summary_display <- models_summary |>
+  mutate(
+    r.squared = round(r.squared, 3),
+    adj.r.squared = round(adj.r.squared, 3),
+    sigma = round(sigma, 3),
+  adj.R.Square.observation = case_when(
+      model == "1" ~ "highest for single predictors.",
+      model == "2" ~ "moderate for single predictors.",
+      model == "3" ~ "the lowest for single predictors.",
+      model == "4" ~ " handspan increases slightly.",
+      model == "5" ~ " minimal effect for 3-predictors."
+    )
+  )
+```
+
+\newpage
+
+```{r }
+# Display the updated summary
+models_summary_display |>
+  flextable() |>
+  set_caption("Model Comparison: Adjusted Metrics and Observations") |>
+  autofit() # Automatically adjust table size
+```
+
+---
+
+Comment:
+
+Adjusted R-squared improves from 0.473 in Model 1 to 0.495 in Model 5. Adding handspan in Model 4 increases Adjusted R-squared modestly (0.491), while adding finger2 in Model 5 results in a minimal improvement (0.495). This suggests to me that height and handspan are the most influential predictors of weight.
+
+---
+
+\newpage
+
+# Step 6: Compare Models m4 and m5
+
+```{r step6_compare, echo=TRUE, message=TRUE}
+# Perform ANOVA to compare m4 and m5
+anova_results <- anova(m4, m5)
+
+# Display the results
+as.data.frame(summary(m4)$coefficients) |> flextable() |>autofit()
+as.data.frame(summary(m5)$coefficients) |> flextable() |>autofit()
+anova_results |> flextable() |>autofit()
+```
+
+---
+
+Which model fits best? 
+
+The ANOVA p-value for comparing m4 and m5 is above 0.05 (0.144746). The addition of finger2_cm in m5 does not significantly improve the model fit.
+
+M4 is best as it is also simpler. 
+
+---
+
+\mewpage
+
+# Step 7:
+
+Validate the best model (m4) based on Step 6) by usinge check_model().
+
+
+
+\newpage
+
+# Step 7: Validate Model Assumptions for m4
+
+```{r step7_residuals_fitted, echo=TRUE, message=FALSE, warning=FALSE, fig.width=6, fig.height=6}
+# Load necessary library
+library(performance)
+
+cm <- check_model(m4)
+print(cm)
+```
+
+\newpage 
+
+---
+
+chedk_model() Observation:
+
+- Predictive Check: Model predictions align with observed data
+- Linearity: Residuals scatter around zero, indicating linearity.
+- Homoscedasticity: Variance is consistent across fitted values.
+- Influential Observations: Points largely within Cook's distance contour.
+- Collinearity: VIF values are acceptable (< 5).
+- Normality: Residuals follow the Q-Q plot line.
+
+--- 
+
+\newpage 
+
+# Step 8: Read tricarpa.csv file
+
+```{r Step 8 }
+
+# Read the tricarpa.csv file
+tricarpa <- read_csv("../data/tricarpa.csv") 
+tri_skim0 <- skim(tricarpa) |>
+  select(skim_variable, n_missing)
+
+tri_skim0
+
+```
+
+\newpage 
+
+# Step 9: Random Sampling of 900 Observations
+
+```{r step9, echo=TRUE, message=TRUE}
+# Reset the seed for reproducibility
+set.seed(82171165)  # Replace with your student ID number
+
+
+tri_sample <- tricarpa |> slice_sample(n = 900)
+my_tri     <- tri_sample
+tri_skim1  <- skim(tri_sample) |>
+  select(skim_variable, n_missing)
+
+
+
+
+```
+
+\newpage
+
+# Step 10: Scatterplot of MOE vs Acoustic Velocity
+
+```{r step10, echo=TRUE, message=TRUE}
+# Scatterplot with axes starting at zero
+my_tri |> 
+  ggplot(aes(x = acoustic_velocity, y = MOE)) +
+  geom_point(alpha = 0.5) +
+  labs(
+    title = "Scatterplot of MOE vs Acoustic Velocity",
+    x = "Acoustic Velocity",
+    y = "MOE"
+  ) +
+  lims(x = c(0, max(my_tri$acoustic_velocity, na.rm = TRUE)), y = c(0, 18)) +
+  theme_bw()
+```
+
+---
+
+The scatterplot shows a strong positive linear relationship. The data points are  clustered around the trend, suggesting a high degree of correlation . A warning indicates that one row was removed due to missing values presuably outside the scale range. acoustic_velocity is likely a significant predictor of MOE. 
+
+---
+
+\newpage 
+
+# Step 11: Fit Linear Regression Model
+
+```{r step11, echo=TRUE, message=TRUE}
+# Fit the linear regression model
+moe_model <- lm(MOE ~ acoustic_velocity, data = my_tri)
+
+# Display model summary
+step11_summary <- summary(moe_model)
+step11_summary
+# Visualise the regression line
+my_tri |> 
+  ggplot(aes(x = acoustic_velocity, y = MOE)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, colour = "blue") +
+  labs(
+    title = "Linear Regression: MOE vs Acoustic Velocity",
+    x = "Acoustic Velocity",
+    y = "MOE"
+  ) +
+  theme_bw()
+```
+
+---
+
+For every one-unit increase in acoustic_velocity, MOE is predicted to increase by approximately 5.98, while the intercept of -11.41 lacks practical significance in this context but is required to properly position the regression line. As the p-value for the slope is <2e-16, the model demonstrates a highly statistically significant relation. The adjusted R-squared value (0.8614) suggests that acoustic_velocity explains approximately 86.14% of the variation in MOE, reiterating a strong model for predicting MOE.
+
+---
+
+\newpage
+
+# Step 12: Create Centred Acoustic Velocity and Scatterplot
+
+```{r step12, echo=TRUE, message=TRUE}
+# Create centred variable
+my_tri <- my_tri |>
+  mutate(c_acoustic = acoustic_velocity - mean(acoustic_velocity))
+
+# Scatterplot with centred acoustic velocity
+tri_splot <- my_tri |> 
+  ggplot(aes(x = c_acoustic, y = MOE)) +
+  geom_point() +
+  labs(
+    title = "Scatterplot of MOE vs Centred Acoustic Velocity",
+    x = "Centred Acoustic Velocity (c_acoustic)",
+    y = "MOE"
+  ) +
+  lims(y = c(0, 18)) +
+  theme_bw()
+
+```
+
+\newpage 
+
+```{r }
+
+tri_splot
+
+```
+
+---
+
+Centring acoustic_velocity by introducing c_acoustic (mean of zero) improves the interpretability of the model by making the intercept represent the predicted MOE for the average value of acoustic_velocity, which has a more practical meaning. Additionally, centring helps to reduce multicollinearity when the interaction or polynomial terms are included in the model, Overall, centring enhances both the interpretability and numerical stability of the model.
+
+---
+
+
+\newpage
+
+# Step 13: Fit Regression Model Using Centred Variable
+
+```{r step13, echo=TRUE, message=TRUE}
+# Fit the regression model with centred acoustic velocity
+moe_model_centre <- lm(MOE ~ c_acoustic, data = my_tri)
+
+
+step13_summary <- summary(moe_model_centre)
+step13_summary 
+
+# Create variables dynamically
+step11_values <- c(
+  coef(step11_summary)[1, 1], # Intercept
+  coef(step11_summary)[2, 1], # Slope
+  step11_summary$r.squared,   # R-squared
+  step11_summary$adj.r.squared, # Adjusted R-squared
+  step11_summary$sigma        # Residual Std. Error
+)
+
+step13_values <- c(
+  coef(step13_summary)[1, 1], # Intercept
+  coef(step13_summary)[2, 1], # Slope
+  step13_summary$r.squared,   # R-squared
+  step13_summary$adj.r.squared, # Adjusted R-squared
+  step13_summary$sigma        # Residual Std. Error
+)
+
+# Create a comparison data frame
+comparison_df <- data.frame(
+  Metric = c(
+    "Intercept", "Slope", "R-squared", 
+    "Adj R-squared", "Residual Std. Error"
+  ),
+  `Step 11` = step11_values,
+  `Step 13` = step13_values,
+  Observation = c(
+    "Intercept is the MOE when acoustic_velocity = 0",
+    "Slope is identical; centering does not change relationship strength",
+    "R-squared remains the same; centering does not affect fit",
+    "Adjusted R-squared remains the same",
+    "Residual standard error remains the same"
+  )
+)
+
+# Create a rounded version of the data for improved readability
+comparison_df_display <- comparison_df
+comparison_df_display[ ,2:3] <- round(comparison_df_display[ ,2:3], 3)
+
+# Use flextable to format the table
+library(flextable)
+ft <- flextable(comparison_df_display) %>%
+  set_caption("Comparison of Regression Models: Step 11 vs Step 13") %>%
+  bg(part = "header", bg = "#D3D3D3") %>%  # Grey background for header
+  theme_box() %>%  # Simplified border styling
+  align(j = 1, align = "left", part = "all") %>%  # Left-align Metric column
+  align(j = 2:3, align = "center", part = "all") %>%  # Center-align model columns
+  align(j = 4, align = "left", part = "all") %>%  # Left-align Observation column
+  border_inner_v(part = "all") %>%  # Add vertical borders
+  border_inner_h(part = "all") %>%  # Add horizontal borders
+  border_outer(part = "all") %>%    # Add outer borders
+  autofit()  # Automatically adjust table size
+
+```
+
+\newpage 
+
+```{r }
+
+ft
+```
+
+---
+
+The identical values for the slope, R-squared, adjusted R-squared, and residual standard error in both models (except the intercept) suggest that centring does not alter the underlying relationships between the predictor and the response.
+
+---
+
+
